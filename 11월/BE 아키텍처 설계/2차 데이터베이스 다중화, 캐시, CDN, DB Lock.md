@@ -59,10 +59,78 @@
 ### DB Replication 관련 테코톡 영상
 
 - [https://www.youtube.com/watch?v=95bnLnIxyWI&ab_channel=우아한테크](https://www.youtube.com/watch?v=95bnLnIxyWI&ab_channel=%EC%9A%B0%EC%95%84%ED%95%9C%ED%85%8C%ED%81%AC)
+- Replication 을 적용하는 목적
+  - 스케일 아웃 (서버 성능 높이기)
+  - 데이터 백업
+  - 데이터 분석
+    - 분석용 쿼리의 경우 대량의 데이터를 다루기 때문에 쿼리 자체가 무거운 편
+    - 레플리카 서버를 분석용 서버로 사용
+  - 데이터의 지리적 분산
+    - 지리적으로 가까운 위치에 데이터베이스 서버를 위치하여, 응답 속도 개선
+- 복제
+  - 바이너리 로그 : MySQL 서버에서 발생하는 모든 변경사항을 별도의 로그 파일에 순서대로 저장
+    - 데이터의 변경 내역
+    - 데이터베이스나 테이블의 구조 변경
+    - 계정이나 권한의 변경 정보
+  - 복제 과정 (데이터 동기화)
+    - 소스 서버에서 생성된 바이너리 로그를 레플리카 서버로 전송
+    - 레플리카 서버의 로컬 디스크에 저장
+    - 레플리카 서버의 MySQL 서버에 반영
+  - 복제를 돕는 3개의 스레드
+    - Binary Log Dump Thread
+      - Binary Log 를 레플리카 서버로 전송
+      - 레플리카 서버가 소스 서버에 연결되면 소스 서버 내부에 Binary Log Dump Thread 생성
+    - Replication I/O Thread
+      - Binary Log Event 를 가져와 로컬 서버의 파일(Relay Log)로 저장
+      - Relay Log : 바이너리 로그 이벤트를 레플리카 로컬 서버에 파일 형태로 저장한 것
+      - Life Cycle : 복제가 시작되면 생성되며, 종료되면 제거됨
+    - Replication SQL Thread
+      - Relay Log 파일을 읽고 실행
+
+    ![](docs/10.png)
 
 ### Connection Pool 관련 유튜브 영상
 
 - https://youtu.be/6Q7iRTb4tQE
+- DB Connection Pool
+
+  ![](docs/11.png)
+
+- Connection Pool 을 적용하는 목적
+  - DB 와 네트워크 연결의 시간 단축 → 응답 시간 단축 → 처리량 증가
+  - Connection 수 제한 → DB 포화 방지 → 일관된 DB 성능 유지
+  - 설정이 잘못되면 오히려 성능 문제가 발생할 수 있음
+- 설정값
+  - `maximumPoolSize` : Connection Pool 의 최대 Connection 개수 (in use + idle)
+    - 설정 시 계산에 필요한 항목 : 하나의 커넥션 당 쿼리 실행 시간, 최대 목표 TPS
+    - 단순 계산 식
+      - 최대 TPS = 1개 커넥션의 초당 처리 요청 개수 * 동시 커넥션 수
+      - 동시 커넥션 수 = 최대 TPS / 1개 커넥션의 초당 처리 요청 개수
+        = 최대 TPS / (1초 / 쿼리 실행 시간)
+    - 평균 시간이 아닌 쿼리 실행 시간이 느린 쿼리도 고려해서 설정할 것
+  - `connectionTimeout` : 커넥션 대기 시간 (default 30초)
+    - Pool 의 모든 커넥션이 사용중일 때 대기하는 시간
+    - 응답이 없는 것보다 빠른 에러 화면 응답이 좋음 (0.5초 ~ 3초 이내)
+  - `maxLifetime` : 커넥션 최대 유지 시간
+    - 커넥션 생성 후 해당 시간이 지나면 커넥션을 닫고 풀에서 제거 (이후 새로운 커넥션 생성)
+    - 네트워크나 DB 설정값보다 작은 값으로 적용
+      - 예) 네트워크 장비의 최대 TCP 커넥션 유지 시간
+      - 만약 해당 설정값보다 크게 설정할 경우
+        - 이미 유효하지 않은 커넥션이 풀에 남게됨
+        - 풀에서 유효하지 않은 커넥션을 구하는 과정에서 새로운 커넥션 생성
+        - 트래픽이 몰리는 시점일 경우 성능 저하 유발
+  - `keepaliveTime` : 커넥션 확인 주기
+    - 유휴 커넥션에 대해 커넥션 확인
+    - 유효하지 않은 커넥션은 풀에서 제거 (이후 새로운 커넥션 생성)
+    - 네트워크나 DB 설정값보다 작은 값으로 적용
+      - 예) DB 의 미활동 커넥션 대기 시간
+  - `minimumidle` : 최소 유휴 개수
+    - 해당 값을 설정하지 않을 경우 maximumPoolSize 와 동일
+    - Hikari 문서 기준 설정하지 않는 것을 추천
+  - `idleTimeout` : 최대 유휴 시간
+    - 사용되지 않고 풀에 머물 수 있는 최대 시간
+    - 풀에서 해당 값 이상으로 머문 커넥션의 경우 종료 후 제거
+    - minimumidle < maximumPoolSize 인 경우에 적용
 
 ## 캐시를 적용하여 조회 성능을 높히자
 
